@@ -1,115 +1,173 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'CloudFormation template for ALB scaling alerts'
+Description: 'Service Catalog Portfolio and Product for ALB Scaling Alerts'
 
 Parameters:
-  LoadBalancerArn:
+  PortfolioName:
     Type: String
-    Description: ARN of the Application Load Balancer
+    Default: "Monitoring Solutions"
+    Description: "Name of the Service Catalog portfolio"
   
-  SNSTopicArn:
+  ProductName:
     Type: String
-    Description: ARN of the SNS topic for alerts
+    Default: "ALB Scaling Alerts"
+    Description: "Name of the Service Catalog product"
   
-  TargetCountThreshold:
-    Type: Number
-    Default: 2
-    Description: Threshold for target count changes
+  TemplateS3Bucket:
+    Type: String
+    Description: "S3 bucket containing the ALB alerts template"
+  
+  TemplateS3Key:
+    Type: String
+    Default: "service-catalog/alb-scaling-alerts.yaml"
+    Description: "S3 key path to the ALB alerts template"
 
 Resources:
-  # CloudWatch Alarm for Target Count Increase
-  TargetCountIncreaseAlarm:
-    Type: AWS::CloudWatch::Alarm
+  # IAM Role for Service Catalog Launch
+  ServiceCatalogLaunchRole:
+    Type: AWS::IAM::Role
     Properties:
-      AlarmName: !Sub "${AWS::StackName}-ALB-TargetCount-Increase"
-      AlarmDescription: "Alert when ALB target count increases"
-      MetricName: TargetCount
-      Namespace: AWS/ApplicationELB
-      Statistic: Average
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: !Ref TargetCountThreshold
-      ComparisonOperator: GreaterThanThreshold
-      Dimensions:
-        - Name: LoadBalancer
-          Value: !Select [1, !Split ["/", !Ref LoadBalancerArn]]
-      AlarmActions:
-        - !Ref SNSTopicArn
-      TreatMissingData: notBreaching
+      RoleName: !Sub "ServiceCatalog-ALB-Alerts-LaunchRole-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: servicecatalog.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSServiceCatalogServiceRolePolicy
+      Policies:
+        - PolicyName: ALBAlertsLaunchPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:TagResource
+                  - events:PutRule
+                  - events:DeleteRule
+                  - events:PutTargets
+                  - events:RemoveTargets
+                  - events:TagResource
+                  - events:UntagResource
+                  - sns:GetTopicAttributes
+                  - elasticloadbalancing:DescribeLoadBalancers
+                  - elasticloadbalancing:DescribeTargetGroups
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                Resource: !Sub "arn:aws:cloudformation:*:${AWS::AccountId}:stack/SC-*"
 
-  # CloudWatch Alarm for Target Count Decrease
-  TargetCountDecreaseAlarm:
-    Type: AWS::CloudWatch::Alarm
+  # Service Catalog Portfolio
+  MonitoringPortfolio:
+    Type: AWS::ServiceCatalog::Portfolio
     Properties:
-      AlarmName: !Sub "${AWS::StackName}-ALB-TargetCount-Decrease"
-      AlarmDescription: "Alert when ALB target count decreases"
-      MetricName: TargetCount
-      Namespace: AWS/ApplicationELB
-      Statistic: Average
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: !Ref TargetCountThreshold
-      ComparisonOperator: LessThanThreshold
-      Dimensions:
-        - Name: LoadBalancer
-          Value: !Select [1, !Split ["/", !Ref LoadBalancerArn]]
-      AlarmActions:
-        - !Ref SNSTopicArn
-      TreatMissingData: notBreaching
+      ProviderName: "Platform Engineering"
+      Description: "Monitoring and alerting solutions for AWS resources"
+      DisplayName: !Ref PortfolioName
+      Tags:
+        - Key: "Department"
+          Value: "Platform Engineering"
+        - Key: "Purpose"
+          Value: "Monitoring"
 
-  # EventBridge Rule for Target Registration/Deregistration
-  ALBTargetChangeRule:
-    Type: AWS::Events::Rule
+  # Service Catalog Product
+  ALBScalingAlertsProduct:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
     Properties:
-      Name: !Sub "${AWS::StackName}-ALB-Target-Changes"
-      Description: "Capture ALB target registration/deregistration events"
-      EventPattern:
-        source:
-          - "aws.elasticloadbalancing"
-        detail-type:
-          - "AWS API Call via CloudTrail"
-        detail:
-          eventSource:
-            - "elasticloadbalancing.amazonaws.com"
-          eventName:
-            - "RegisterTargets"
-            - "DeregisterTargets"
-          requestParameters:
-            targetGroupArn:
-              - prefix: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:targetgroup/"
-      State: ENABLED
-      Targets:
-        - Arn: !Ref SNSTopicArn
-          Id: "ALBTargetChangeTarget"
+      Name: !Ref ProductName
+      Description: "Deploy CloudWatch alarms and EventBridge rules for ALB scaling events"
+      Owner: "Platform Engineering Team"
+      Distributor: "Platform Engineering"
+      SupportDescription: "Contact Platform Engineering team for support"
+      SupportEmail: "platform-engineering@company.com"
+      SupportUrl: "https://wiki.company.com/monitoring"
+      Tags:
+        - Key: "Product"
+          Value: "Monitoring"
+        - Key: "Category"
+          Value: "ALB"
+      ProvisioningArtifactParameters:
+        - Name: "v1.0"
+          Description: "Initial version with CloudWatch alarms and EventBridge rules"
+          Info:
+            LoadTemplateFromURL: !Sub "https://${TemplateS3Bucket}.s3.amazonaws.com/${TemplateS3Key}"
 
-  # CloudWatch Alarm for Healthy Host Count Changes
-  HealthyHostCountAlarm:
-    Type: AWS::CloudWatch::Alarm
+  # Associate Product with Portfolio
+  ProductPortfolioAssociation:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
     Properties:
-      AlarmName: !Sub "${AWS::StackName}-ALB-HealthyHost-Change"
-      AlarmDescription: "Alert when healthy host count changes significantly"
-      MetricName: HealthyHostCount
-      Namespace: AWS/ApplicationELB
-      Statistic: Average
-      Period: 300
-      EvaluationPeriods: 2
-      Threshold: 1
-      ComparisonOperator: LessThanThreshold
-      Dimensions:
-        - Name: LoadBalancer
-          Value: !Select [1, !Split ["/", !Ref LoadBalancerArn]]
-      AlarmActions:
-        - !Ref SNSTopicArn
-      TreatMissingData: breaching
+      PortfolioId: !Ref MonitoringPortfolio
+      ProductId: !Ref ALBScalingAlertsProduct
+
+  # Launch Role Constraint
+  LaunchRoleConstraint:
+    Type: AWS::ServiceCatalog::LaunchRoleConstraint
+    Properties:
+      PortfolioId: !Ref MonitoringPortfolio
+      ProductId: !Ref ALBScalingAlertsProduct
+      RoleArn: !GetAtt ServiceCatalogLaunchRole.Arn
+
+  # Template Constraint (optional - for parameter validation)
+  TemplateConstraint:
+    Type: AWS::ServiceCatalog::LaunchTemplateConstraint
+    Properties:
+      PortfolioId: !Ref MonitoringPortfolio
+      ProductId: !Ref ALBScalingAlertsProduct
+      Rules: |
+        {
+          "Rules": {
+            "ValidateALBArn": {
+              "Rule": {
+                "Fn::And": [
+                  {
+                    "Fn::Contains": [
+                      ["arn:aws:elasticloadbalancing"],
+                      {"Ref": "LoadBalancerArn"}
+                    ]
+                  },
+                  {
+                    "Fn::Contains": [
+                      ["loadbalancer/app/"],
+                      {"Ref": "LoadBalancerArn"}
+                    ]
+                  }
+                ]
+              },
+              "Assertions": [
+                {
+                  "Assert": {"Ref": "ValidateALBArn"},
+                  "AssertDescription": "LoadBalancerArn must be a valid Application Load Balancer ARN"
+                }
+              ]
+            }
+          }
+        }
 
 Outputs:
-  TargetCountIncreaseAlarmArn:
-    Description: ARN of the target count increase alarm
-    Value: !GetAtt TargetCountIncreaseAlarm.Arn
-    
-  TargetCountDecreaseAlarmArn:
-    Description: ARN of the target count decrease alarm
-    Value: !GetAtt TargetCountDecreaseAlarm.Arn
-    
-  EventRuleArn:
-    Description: ARN of the EventBridge rule
-    Value: !GetAtt ALBTargetChangeRule.Arn
+  PortfolioId:
+    Description: "Service Catalog Portfolio ID"
+    Value: !Ref MonitoringPortfolio
+    Export:
+      Name: !Sub "${AWS::StackName}-PortfolioId"
+  
+  ProductId:
+    Description: "Service Catalog Product ID"
+    Value: !Ref ALBScalingAlertsProduct
+    Export:
+      Name: !Sub "${AWS::StackName}-ProductId"
+  
+  LaunchRoleArn:
+    Description: "Service Catalog Launch Role ARN"
+    Value: !GetAtt ServiceCatalogLaunchRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-LaunchRoleArn"

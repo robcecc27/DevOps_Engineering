@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for ALB scaling alerts'
+
+Parameters:
+  LoadBalancerArn:
+    Type: String
+    Description: ARN of the Application Load Balancer
+  
+  SNSTopicArn:
+    Type: String
+    Description: ARN of the SNS topic for alerts
+  
+  TargetCountThreshold:
+    Type: Number
+    Default: 2
+    Description: Threshold for target count changes
+
+Resources:
+  # CloudWatch Alarm for Target Count Increase
+  TargetCountIncreaseAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-ALB-TargetCount-Increase"
+      AlarmDescription: "Alert when ALB target count increases"
+      MetricName: TargetCount
+      Namespace: AWS/ApplicationELB
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: !Ref TargetCountThreshold
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Select [1, !Split ["/", !Ref LoadBalancerArn]]
+      AlarmActions:
+        - !Ref SNSTopicArn
+      TreatMissingData: notBreaching
+
+  # CloudWatch Alarm for Target Count Decrease
+  TargetCountDecreaseAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-ALB-TargetCount-Decrease"
+      AlarmDescription: "Alert when ALB target count decreases"
+      MetricName: TargetCount
+      Namespace: AWS/ApplicationELB
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: !Ref TargetCountThreshold
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Select [1, !Split ["/", !Ref LoadBalancerArn]]
+      AlarmActions:
+        - !Ref SNSTopicArn
+      TreatMissingData: notBreaching
+
+  # EventBridge Rule for Target Registration/Deregistration
+  ALBTargetChangeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${AWS::StackName}-ALB-Target-Changes"
+      Description: "Capture ALB target registration/deregistration events"
+      EventPattern:
+        source:
+          - "aws.elasticloadbalancing"
+        detail-type:
+          - "AWS API Call via CloudTrail"
+        detail:
+          eventSource:
+            - "elasticloadbalancing.amazonaws.com"
+          eventName:
+            - "RegisterTargets"
+            - "DeregisterTargets"
+          requestParameters:
+            targetGroupArn:
+              - prefix: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:targetgroup/"
+      State: ENABLED
+      Targets:
+        - Arn: !Ref SNSTopicArn
+          Id: "ALBTargetChangeTarget"
+
+  # CloudWatch Alarm for Healthy Host Count Changes
+  HealthyHostCountAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-ALB-HealthyHost-Change"
+      AlarmDescription: "Alert when healthy host count changes significantly"
+      MetricName: HealthyHostCount
+      Namespace: AWS/ApplicationELB
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Select [1, !Split ["/", !Ref LoadBalancerArn]]
+      AlarmActions:
+        - !Ref SNSTopicArn
+      TreatMissingData: breaching
+
+Outputs:
+  TargetCountIncreaseAlarmArn:
+    Description: ARN of the target count increase alarm
+    Value: !GetAtt TargetCountIncreaseAlarm.Arn
+    
+  TargetCountDecreaseAlarmArn:
+    Description: ARN of the target count decrease alarm
+    Value: !GetAtt TargetCountDecreaseAlarm.Arn
+    
+  EventRuleArn:
+    Description: ARN of the EventBridge rule
+    Value: !GetAtt ALBTargetChangeRule.Arn

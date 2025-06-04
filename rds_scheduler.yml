@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Schedule start and stop of Aurora DB clusters based on tag (AutoSchedule=true)
+
+Resources:
+
+  AuroraSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AuroraSchedulerLambdaRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AuroraControlPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - rds:DescribeDBClusters
+                  - rds:ListTagsForResource
+                  - rds:StartDBCluster
+                  - rds:StopDBCluster
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  AuroraControlLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: AuroraClusterScheduler
+      Handler: index.lambda_handler
+      Runtime: python3.12
+      Timeout: 60
+      Role: !GetAtt AuroraSchedulerRole.Arn
+      Code:
+        ZipFile: |
+          import boto3
+          import os
+
+          def lambda_handler(event, context):
+              action = event.get('action')
+              rds = boto3.client('rds')
+              clusters = rds.describe_db_clusters()['DBClusters']
+              
+              for cluster in clusters:
+                  arn = cluster['DBClusterArn']
+                  tags = rds.list_tags_for_resource(ResourceName=arn).get('TagList', [])
+                  tag_map = {tag['Key']: tag['Value'] for tag in tags}
+                  
+                  if tag_map.get('AutoSchedule', '').lower() == 'true':
+                      cluster_id = cluster['DBClusterIdentifier']
+                      try:
+                          if action == 'start':
+                              rds.start_db_cluster(DBClusterIdentifier=cluster_id)
+                              print(f"Started: {cluster_id}")
+                          elif action == 'stop':
+                              rds.stop_db_cluster(DBClusterIdentifier=cluster_id)
+                              print(f"Stopped: {cluster_id}")
+                      except Exception as e:
+                          print(f"Error on {cluster_id}: {e}")
+              return {'status': 'done'}
+
+  StartAuroraRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: StartAuroraClustersRule
+      ScheduleExpression: cron(0 12 * * ? *)  # 7 AM Eastern / 12 PM UTC
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt AuroraControlLambda.Arn
+          Id: StartAurora
+          Input: '{"action": "start"}'
+
+  StopAuroraRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: StopAuroraClustersRule
+      ScheduleExpression: cron(0 0 * * ? *)  # 7 PM Eastern / 12 AM UTC (next day)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt AuroraControlLambda.Arn
+          Id: StopAurora
+          Input: '{"action": "stop"}'
+
+  PermissionStartInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AuroraControlLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt StartAuroraRule.Arn
+
+  PermissionStopInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AuroraControlLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt StopAuroraRule.Arn
+

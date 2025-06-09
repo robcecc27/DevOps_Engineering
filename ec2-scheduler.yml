@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "Schedules EC2 instance start/stop using tags and EventBridge"
+
+Parameters:
+  TimeZone:
+    Type: String
+    Default: "America/New_York"
+    Description: "Timezone for start/stop (e.g., America/New_York)"
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EC2SchedulerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:StartInstances
+                  - ec2:StopInstances
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  EC2SchedulerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      Code:
+        ZipFile: |
+          import boto3
+          import os
+
+          def lambda_handler(event, context):
+              action = event.get("action")
+              ec2 = boto3.client('ec2')
+              filters = [{'Name': 'tag:AutoSchedule', 'Values': ['true']}]
+              instances = ec2.describe_instances(Filters=filters)
+              instance_ids = [
+                  i['InstanceId']
+                  for r in instances['Reservations']
+                  for i in r['Instances']
+              ]
+              if not instance_ids:
+                  return {"message": "No tagged instances found."}
+              if action == "start":
+                  ec2.start_instances(InstanceIds=instance_ids)
+                  return {"message": f"Started {len(instance_ids)} instances"}
+              elif action == "stop":
+                  ec2.stop_instances(InstanceIds=instance_ids)
+                  return {"message": f"Stopped {len(instance_ids)} instances"}
+              else:
+                  return {"message": "No valid action provided"}
+
+  StartScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: "cron(0 11 ? * MON-FRI *)"  # 7 AM EST
+      Name: "EC2StartWeekdays"
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt EC2SchedulerFunction.Arn
+          Id: "StartTarget"
+          Input: '{"action": "start"}'
+
+  StopScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: "cron(0 23 ? * MON-FRI *)"  # 7 PM EST
+      Name: "EC2StopWeekdays"
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt EC2SchedulerFunction.Arn
+          Id: "StopTarget"
+          Input: '{"action": "stop"}'
+
+  PermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref EC2SchedulerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt StartScheduleRule.Arn
+
+  PermissionForEventsToInvokeLambdaStop:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref EC2SchedulerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt StopScheduleRule.Arn
+
+Outputs:
+  LambdaFunctionName:
+    Description: "Lambda function managing EC2 start/stop"
+    Value: !Ref EC2SchedulerFunction
+

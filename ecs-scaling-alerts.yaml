@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ECS Scaling Alert: Sends email when tasks/services scale in a cluster'
+
+Parameters:
+  ClusterName:
+    Type: String
+    Description: >-
+      The name of the ECS cluster to monitor for scaling events.
+      Example: "my-app-cluster"
+
+  ServiceName:
+    Type: String
+    Description: >-
+      The name of the ECS service running in the specified cluster.
+      This should be the service name **without** the full ARN.
+      Example: "frontend-service"
+
+  AlertEmail:
+    Type: String
+    Description: >-
+      The email address where ECS scaling alerts will be sent.
+      This must be a valid email address to confirm SNS subscription.
+
+Resources:
+
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "ecs-scaling-alerts-${ClusterName}"
+      DisplayName: "ECS Scaling Alerts"
+
+  SNSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref SNSTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  EventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "ecs-scaling-events-${ClusterName}-${ServiceName}"
+      Description: !Sub "Captures ECS scaling events for service ${ServiceName} in cluster ${ClusterName}"
+      State: ENABLED
+      EventPattern:
+        source:
+          - "aws.ecs"
+        detail-type:
+          - "ECS Service Action"
+        detail:
+          clusterArn:
+            - !Sub "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}"
+          serviceArn:
+            - !Sub "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/${ClusterName}/${ServiceName}"
+          eventName:
+            - "SERVICE_DEPLOYMENT_COMPLETED"
+            - "SERVICE_TASK_SET_CREATED"
+            - "SERVICE_ACTION_SUCCEEDED"
+      Targets:
+        - Arn: !Ref SNSTopic
+          Id: "NotifyECSScaling"
+
+  SNSTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref SNSTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: "SNS:Publish"
+            Resource: !Ref SNSTopic
+
+Outputs:
+  ECSAlertTopic:
+    Value: !Ref SNSTopic
+    Description: "SNS topic that receives ECS scaling alerts"
+
+  ECSAlertEventRule:
+    Value: !Ref EventRule
+    Description: "EventBridge rule monitoring ECS scaling events"

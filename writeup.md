@@ -1,6 +1,6 @@
 ## **Progress Summary: Application and Infrastructure Monitoring & Documentation**
 
-### ✅ **1. Splunk Dashboard Development**
+### **1. Splunk Dashboard Development**
 
 I created a Splunk dashboard focused on monitoring ECS container performance and Aurora PostgreSQL database health. The dashboard currently includes:
 
@@ -17,7 +17,7 @@ I created a Splunk dashboard focused on monitoring ECS container performance and
 
 ---
 
-### 🚨 **2. Splunk Alerts Implemented**
+### **2. Splunk Alerts Implemented**
 
 #### **a. Alert: Non-Running Containers**
 
@@ -33,7 +33,7 @@ I created a Splunk dashboard focused on monitoring ECS container performance and
 
 ---
 
-### 📊 **3. Existing AWS CloudWatch Dashboards Available**
+### **3. Existing AWS CloudWatch Dashboards Available**
 
 To complement Splunk monitoring, the following built-in dashboards are available in AWS CloudWatch:
 
@@ -56,7 +56,7 @@ To complement Splunk monitoring, the following built-in dashboards are available
 
 ---
 
-### 📚 **4. CloudFormation Template Documentation**
+### **4. CloudFormation Template Documentation**
 
 As part of the infrastructure review, I’ve been actively documenting all existing CloudFormation templates. This includes:
 
@@ -66,7 +66,7 @@ As part of the infrastructure review, I’ve been actively documenting all exist
 
 ---
 
-### 🔁 **5. Rebuild Process Documentation**
+### **5. Rebuild Process Documentation**
 
 I’ve created a standalone document titled **“Environment Rebuild Guide”**, which outlines:
 
@@ -77,6 +77,16 @@ I’ve created a standalone document titled **“Environment Rebuild Guide”**,
 This guide ensures reproducibility and is being structured to assist both internal engineers and new team members onboarding into the project.
 
 ---
+### 6. Cost Optimization Implementation
+To reduce ongoing cloud spend, I implemented multiple cost-saving strategies across our environments:
+
+Resource Downsizing:
+Reviewed and adjusted instance types for EC2, RDS, and migration servers, replacing overprovisioned resources with appropriately sized instances based on utilization metrics.
+
+Automated Scheduling:
+Set up daily automation to shut down EC2, ECS services, and RDS instances between 7:00 PM and 7:00 AM, and keep them offline over weekends, unless otherwise needed. This significantly reduces idle resource costs during non-working hours.
+
+These changes provide immediate monthly cost savings and demonstrate proactive cloud governance.
 
 ### ✅ **Summary**
 

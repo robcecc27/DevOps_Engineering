@@ -314,3 +314,162 @@ Would you like:
 
 Let me know and I’ll extend from here.
 
+Thanks for confirming it’s an **Aurora PostgreSQL cluster** with both a writer and a reader instance.
+
+Here are the full `aws cloudwatch put-metric-alarm` commands, **separately for each instance** (writer and reader), using the correct `DBInstanceIdentifier` for each.
+
+> ⚠️ For Aurora, **you must use `DBInstanceIdentifier`** (not `DBClusterIdentifier`) for instance-level metrics like CPU and FreeableMemory. These metrics are at the **instance level**, not cluster.
+
+---
+
+## 🔧 Replace the following placeholders in each command:
+
+* `INSTANCE_ID_WRITER` = your writer instance ID (e.g., `aurora-cluster-1-instance-1`)
+* `INSTANCE_ID_READER` = your reader instance ID (e.g., `aurora-cluster-1-instance-2`)
+* `SNS_ARN` = your SNS topic ARN for notifications
+
+---
+
+### ✅ 1. CPU Utilization Alarm (Writer)
+
+```bash
+aws cloudwatch put-metric-alarm \
+  --alarm-name "AuroraWriter-HighCPU" \
+  --metric-name CPUUtilization \
+  --namespace AWS/RDS \
+  --statistic Average \
+  --period 300 \
+  --threshold 80 \
+  --comparison-operator GreaterThanThreshold \
+  --dimensions Name=DBInstanceIdentifier,Value=INSTANCE_ID_WRITER \
+  --evaluation-periods 2 \
+  --alarm-actions SNS_ARN \
+  --ok-actions SNS_ARN \
+  --unit Percent
+```
+
+### ✅ 2. Freeable Memory Alarm (Writer)
+
+```bash
+aws cloudwatch put-metric-alarm \
+  --alarm-name "AuroraWriter-LowMemory" \
+  --metric-name FreeableMemory \
+  --namespace AWS/RDS \
+  --statistic Average \
+  --period 300 \
+  --threshold 200000000 \
+  --comparison-operator LessThanThreshold \
+  --dimensions Name=DBInstanceIdentifier,Value=INSTANCE_ID_WRITER \
+  --evaluation-periods 2 \
+  --alarm-actions SNS_ARN \
+  --ok-actions SNS_ARN \
+  --unit Bytes
+```
+
+### ✅ 3. ReadIOPS Alarm (Reader)
+
+```bash
+aws cloudwatch put-metric-alarm \
+  --alarm-name "AuroraReader-HighReadIOPS" \
+  --metric-name ReadIOPS \
+  --namespace AWS/RDS \
+  --statistic Sum \
+  --period 300 \
+  --threshold 10000 \
+  --comparison-operator GreaterThanThreshold \
+  --dimensions Name=DBInstanceIdentifier,Value=INSTANCE_ID_READER \
+  --evaluation-periods 2 \
+  --alarm-actions SNS_ARN \
+  --ok-actions SNS_ARN
+```
+
+### ✅ 4. WriteIOPS Alarm (Writer)
+
+```bash
+aws cloudwatch put-metric-alarm \
+  --alarm-name "AuroraWriter-HighWriteIOPS" \
+  --metric-name WriteIOPS \
+  --namespace AWS/RDS \
+  --statistic Sum \
+  --period 300 \
+  --threshold 10000 \
+  --comparison-operator GreaterThanThreshold \
+  --dimensions Name=DBInstanceIdentifier,Value=INSTANCE_ID_WRITER \
+  --evaluation-periods 2 \
+  --alarm-actions SNS_ARN \
+  --ok-actions SNS_ARN
+```
+
+---
+
+Would you like to also include:
+
+* **DBCluster-level alarms** (e.g., `VolumeBytesUsed` or `DiskQueueDepth`)?
+* A **CloudFormation version** for these?
+* **Cross-account SNS delivery** setup if you're centralizing alarms?
+
+Let me know and I’ll tailor the next set.
+
+Perfect — here’s a CloudFormation template for **Aurora PostgreSQL cluster-level CloudWatch alarms**, including `DiskQueueDepth` (most useful for diagnosing latency from saturated storage volumes).
+
+You now have 3 groups:
+
+---
+
+## ✅ Aurora PostgreSQL – Cluster-Level Alarms (CloudFormation)
+
+```yaml
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudWatch Alarms for Aurora PostgreSQL Cluster-Level Metrics
+
+Parameters:
+  DBClusterIdentifier:
+    Type: String
+    Description: Aurora DB cluster identifier (e.g., aurora-prod-cluster)
+  AlarmSNSTopicARN:
+    Type: String
+    Description: ARN of the SNS topic to receive alarm notifications
+
+Resources:
+  DiskQueueDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DBClusterIdentifier}-HighDiskQueueDepth"
+      Namespace: AWS/RDS
+      MetricName: DiskQueueDepth
+      Dimensions:
+        - Name: DBClusterIdentifier
+          Value: !Ref DBClusterIdentifier
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 64
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions: [!Ref AlarmSNSTopicARN]
+      OKActions: [!Ref AlarmSNSTopicARN]
+      Unit: Count
+```
+
+> ⚠️ `DiskQueueDepth` is often preferred over `VolumeBytesUsed` for detecting I/O bottlenecks, because it shows how many pending read/write operations are stacking up. A high value means your workload is I/O-constrained.
+
+---
+
+## ✅ Summary of Recommended Alarms
+
+| Metric             | Level    | Best For                          |
+| ------------------ | -------- | --------------------------------- |
+| CPUUtilization     | Instance | High CPU usage                    |
+| FreeableMemory     | Instance | Memory pressure                   |
+| ReadIOPS/WriteIOPS | Instance | IOPS behavior on reader/writer    |
+| DiskQueueDepth     | Cluster  | Detecting I/O latency bottlenecks |
+
+---
+
+Would you like me to:
+
+* Add thresholds for `VolumeBytesUsed` as a **secondary/optional alarm**?
+* Bundle all the above CloudFormation templates into a modular nested stack design?
+* Include tagging or notification metadata to help categorize alarms?
+
+Let me know how you'd like to organize or deploy these across environments.
+

@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: SNS Topic and Subscription for CloudWatch Alarms
+
+Parameters:
+  EmailAddress:
+    Type: String
+    Description: Email address to subscribe for alarm notifications
+
+Resources:
+  AlarmSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: CloudWatchAlarmNotifications
+
+  AlarmSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !Ref EmailAddress
+      Protocol: email
+      TopicArn: !Ref AlarmSNSTopic
+
+Outputs:
+  AlarmSNSTopicARN:
+    Description: ARN of the SNS Topic
+    Value: !Ref AlarmSNSTopic
+

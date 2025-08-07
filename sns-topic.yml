@@ -1,26 +1,47 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: SNS Topic and Subscription for CloudWatch Alarms
+Description: >
+  Creates or attaches to an SNS topic and subscribes an email address for CloudWatch Alarm notifications.
 
 Parameters:
   EmailAddress:
     Type: String
-    Description: Email address to subscribe for alarm notifications
+    Description: Email address to subscribe for notifications
+
+  ExistingTopicArn:
+    Type: String
+    Default: ""
+    Description: Optional existing SNS topic ARN. If provided, no new topic will be created.
+
+  TopicName:
+    Type: String
+    Default: "CloudWatchAlarmNotifications"
+    Description: Name for the new SNS topic (ignored if ExistingTopicArn is provided)
+
+Conditions:
+  CreateSNSTopic: !Equals [!Ref ExistingTopicArn, ""]
 
 Resources:
   AlarmSNSTopic:
+    Condition: CreateSNSTopic
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: CloudWatchAlarmNotifications
+      TopicName: !Ref TopicName
 
   AlarmSubscription:
     Type: AWS::SNS::Subscription
     Properties:
       Endpoint: !Ref EmailAddress
       Protocol: email
-      TopicArn: !Ref AlarmSNSTopic
+      TopicArn: !If
+        - CreateSNSTopic
+        - !Ref AlarmSNSTopic
+        - !Ref ExistingTopicArn
 
 Outputs:
   AlarmSNSTopicARN:
-    Description: ARN of the SNS Topic
-    Value: !Ref AlarmSNSTopic
+    Description: The SNS Topic ARN used for subscriptions
+    Value: !If
+      - CreateSNSTopic
+      - !Ref AlarmSNSTopic
+      - !Ref ExistingTopicArn
 

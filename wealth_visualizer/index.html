@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wealth Distance Visualizer</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-sA+e2tGgWcGp1rH/87b5iVb6BsO8su1YPnRfuBjCZoM=" crossorigin="">
+</head>
+<body>
+    <h1>Wealth Distance Visualizer</h1>
+    <div id="controls">
+        <label for="netWorth">Enter your net worth (USD): </label>
+        <input type="number" id="netWorth" placeholder="e.g., 500000">
+        <button id="showBtn">Show on Map</button>
+        <p id="result"></p>
+    </div>
+    <div id="map"></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-o9N1j7Q5bbR5brZyjKdwfVmZ60p1Nw52xR5x0iCmZos=" crossorigin=""></script>
+    <script src="main.js"></script>
+</body>
+</html>

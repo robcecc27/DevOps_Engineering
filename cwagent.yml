@@ -1,0 +1,215 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ECS Service with API container and CloudWatch Agent sidecar that runs continuously
+
+Parameters:
+  ClusterArn:
+    Type: String
+    Description: Existing ECS Cluster ARN
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  ApiImage:
+    Type: String
+    Description: ECR image URI for the API container (e.g., 123456789012.dkr.ecr.us-east-1.amazonaws.com/api:latest)
+  CwAgentImage:
+    Type: String
+    Default: public.ecr.aws/cloudwatch-agent/cloudwatch-agent:latest
+    Description: CloudWatch Agent container image
+  DesiredCount:
+    Type: Number
+    Default: 1
+  CpuUnits:
+    Type: Number
+    Default: 512
+    AllowedValues: [256, 512, 1024, 2048, 4096]
+  MemoryMiB:
+    Type: Number
+    Default: 1024
+    AllowedValues: [512, 1024, 2048, 3072, 4096, 5120, 6144, 7168, 8192]
+  EnvName:
+    Type: String
+    Default: prod
+    Description: Used to build SSM path for cwagent config, e.g. /prod/cwagent
+  ApiContainerCpu:
+    Type: Number
+    Default: 384
+  ApiContainerMemoryReservation:
+    Type: Number
+    Default: 512
+  CwAgentCpu:
+    Type: Number
+    Default: 128
+  CwAgentMemoryReservation:
+    Type: Number
+    Default: 256
+  ApiLogGroupName:
+    Type: String
+    Default: /ecs/api
+  CwAgentLogGroupName:
+    Type: String
+    Default: /ecs/cwagent
+  AssignPublicIP:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+
+Resources:
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref ApiLogGroupName
+      RetentionInDays: 30
+
+  CwAgentLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref CwAgentLogGroupName
+      RetentionInDays: 30
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Pulling images, writing awslogs, ECS exec basics
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: cwagent-minimum
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs and Metrics
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+              # If your cwagent fetches config from SSM Parameter Store
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: "*"
+              # If your SSM parameter is KMS-encrypted
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: "*"
+
+  ServiceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ECS service SG
+      VpcId: !Ref VpcId
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities: [FARGATE]
+      Cpu: !Ref CpuUnits
+      Memory: !Ref MemoryMiB
+      NetworkMode: awsvpc
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: cwagent
+          Image: !Ref CwAgentImage
+          Essential: true
+          Cpu: !Ref CwAgentCpu
+          MemoryReservation: !Ref CwAgentMemoryReservation
+          Environment:
+            - Name: RUN_IN_CONTAINER
+              Value: "True"
+          Command:
+            - /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl
+            - -a
+            - fetch-config
+            - -m
+            - ecs
+            - -c
+            - !Sub "ssm:/${EnvName}/cwagent"
+            - -s
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - >
+                /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a status |
+                grep running || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 20
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref CwAgentLogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: cwagent
+
+        - Name: api
+          Image: !Ref ApiImage
+          Essential: true
+          Cpu: !Ref ApiContainerCpu
+          MemoryReservation: !Ref ApiContainerMemoryReservation
+          DependsOn:
+            - ContainerName: cwagent
+              Condition: HEALTHY
+          # If you only need stdout/stderr logs, awslogs is simpler than a sidecar.
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ApiLogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: api
+          # Example port mapping; adjust or remove as needed
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - ApiLogGroup
+      - CwAgentLogGroup
+    Properties:
+      Cluster: !Ref ClusterArn
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      TaskDefinition: !Ref TaskDefinition
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 50
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: !Ref AssignPublicIP
+          SecurityGroups:
+            - !Ref ServiceSecurityGroup
+          Subnets: !Ref SubnetIds
+
+Outputs:
+  TaskDefinitionArn:
+    Value: !Ref TaskDefinition
+  ServiceName:
+    Value: !GetAtt Service.Name
+

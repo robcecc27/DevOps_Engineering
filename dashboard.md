@@ -76,5 +76,36 @@ index=swat sourcetype="springboot:api" accountid=123456789012 ("ERROR" OR "FAILU
 If you drop that into a Dashboard Studio panel, just paste it as the **data source query** and choose a **Table** visualization for a clean view.
 
 ---
+Option A: X‑axis = ERROR/FAILURE, series = accountid (clustered bars)
+spl
+Copy
+Edit
+index=swat sourcetype="springboot:api" ("ERROR" OR "FAILURE")
+| spath
+| eval level=coalesce(upper(level), if(like(upper(_raw),"%FAILURE%"),"FAILURE", if(like(upper(_raw),"%ERROR%"),"ERROR", null())))
+| eval accountid=coalesce(accountid,"(none)")
+| search level=ERROR OR level=FAILURE
+| chart count over level by accountid
+In the viz: choose Column (or Bar) → Stack Mode: off for clustered, or Stacked if you prefer one bar per level.
 
-Do you want me to also give you a **companion query** that shows a time-chart of error counts so you can have both the table and a visual trend in your dashboard? That way you get quick insights plus detail when you need to drill in.
+Option B: X‑axis = accountid, series = ERROR/FAILURE
+spl
+Copy
+Edit
+index=swat sourcetype="springboot:api" ("ERROR" OR "FAILURE")
+| spath
+| eval level=coalesce(upper(level), if(like(upper(_raw),"%FAILURE%"),"FAILURE","ERROR"))
+| eval accountid=coalesce(accountid,"(none)")
+| chart count over accountid by level
+Notes
+Keep the transforming command last (chart or stats). If you add table after it, the chart will break.
+
+If you want totals/labels:
+
+spl
+Copy
+Edit
+... | chart count over level by accountid | rename count AS events
+If some events have neither term, they’ll be dropped by the search level=... line; that’s intentional here.
+
+

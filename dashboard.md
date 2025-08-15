@@ -108,4 +108,9 @@ Edit
 ... | chart count over level by accountid | rename count AS events
 If some events have neither term, they’ll be dropped by the search level=... line; that’s intentional here.
 
-
+index=swat sourcetype="springboot:api" "Cognito UserId::"
+| rex "Cognito UserId::\"(?<username>[^\"]+)\""
+| rex "(?<epoch_time>\d+\.\d+)"
+| eval login_time=strftime(epoch_time, "%Y-%m-%d %H:%M:%S")
+| table login_time username
+| sort - login_time

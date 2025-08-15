@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="Windows-1252" ?>
+<NotepadPlus>
+    <UserLang name="MarkdownLite" ext="md markdown txt" udlVersion="2.1">
+        <Settings>
+            <Global caseIgnored="no" allowFoldOfComments="yes" foldCompact="yes" forcePureLC="0" decimalSeparator="0" />
+            <Prefix Keywords1="no" Keywords2="no" Keywords3="no" Keywords4="no" Keywords5="no" Keywords6="no" Keywords7="no" Keywords8="no" />
+        </Settings>
+
+        <!-- Keywords: use for callouts like TODO/NOTE/WARN -->
+        <KeywordLists>
+            <Keywords name="Keywords1">TODO NOTE WARNING WARN IMPORTANT FIX ME HACK</Keywords>
+            <Keywords name="Keywords2"></Keywords>
+            <Keywords name="Keywords3"></Keywords>
+            <Keywords name="Keywords4"></Keywords>
+            <Keywords name="Keywords5"></Keywords>
+            <Keywords name="Keywords6"></Keywords>
+            <Keywords name="Keywords7"></Keywords>
+            <Keywords name="Keywords8"></Keywords>
+
+            <!-- Operators: treat list markers and common punctuation as operators for subtle color -->
+            <Keywords name="Operators1">- + * • · > # ## ### #### ##### ###### =</Keywords>
+            <Keywords name="Operators2"></Keywords>
+
+            <!-- Comments: 
+                 - Line comments with '#' color entire heading-style lines
+                 - Secondary line comment '>' colors blockquote lines -->
+            <Keywords name="Comment">00# 01 02</Keywords>
+            <Keywords name="CommentLine">00# 01&gt; 02</Keywords>
+            <Keywords name="CommentDoc"></Keywords>
+
+            <!-- Folding: code fences ``` create fold blocks -->
+            <Keywords name="Folders in code1, open">{</Keywords>
+            <Keywords name="Folders in code1, middle"></Keywords>
+            <Keywords name="Folders in code1, close">}</Keywords>
+            <Keywords name="Folders in code2, open"></Keywords>
+            <Keywords name="Folders in code2, middle"></Keywords>
+            <Keywords name="Folders in code2, close"></Keywords>
+            <Keywords name="Folders in comment, open"></Keywords>
+            <Keywords name="Folders in comment, middle"></Keywords>
+            <Keywords name="Folders in comment, close"></Keywords>
+
+            <!-- Delimiters for emphasis, code, links -->
+            <!-- Each pair is Open, Mid (unused), Close -->
+            <Keywords name="Delimiters">00` 01 02` 03``` 04 05``` 06** 07 08** 09__ 10 11__ 12* 13 14* 15_ 16 17_</Keywords>
+            <Keywords name="Delimiters2">00[ 01 02] 03( 04 05)</Keywords>
+        </KeywordLists>
+
+        <Styles>
+            <!-- Default text -->
+            <WordsStyle name="DEFAULT" fgColor="2B2B2B" bgColor="FFFFFF" fontName="" fontStyle="0" nesting="0" />
+
+            <!-- Callout keywords (TODO, NOTE, etc.) -->
+            <WordsStyle name="KEYWORDS1" fgColor="AD4B00" bgColor="FFFFFF" fontName="" fontStyle="1" nesting="0" />
+            <WordsStyle name="KEYWORDS2" fgColor="000000" bgColor="FFFFFF" fontName="" fontStyle="0" nesting="0" />
+            <WordsStyle name="KEYWORDS3" fgColor="000000" bgColor="FFFFFF" fontName="" fontStyle="0" nesting="0" />
+            <WordsStyle name="KEYWORDS4" fgColor="000000" bgColor="FFFFFF" fontName="" fontStyle="0" nesting="0" />
+            <WordsStyle name="KEYWORDS5" fgColor="000000" bgColor="FFFFFF" fontName="" fontStyle="0" nesting="0" />
+            <WordsStyle name="KEYWORDS6" fgColor="000000" bgColor="FFFFFF" fontName="" fontStyle="0" nesting="0" />
+            <WordsStyle name="KEYWORDS7" fgColor="000000" bgColor="FFFFFF" fontName="" fontStyle="0" nesting="0" />
+            <WordsStyle name="KEYWORDS8" fgColor="000000" bgColor="FFFFFF" fontName="" fontStyle="0" nesting="0" />
+
+            <!-- Operators (list bullets, #, >, etc.) -->
+            <WordsStyle name="OPERATORS1" fgColor="5B7CBE" bgColor="FFFFFF" fontName="" fontStyle="1" nesting="0" />
+            <WordsStyle name="OPERATORS2" fgColor="5B7CBE" bgColor="FFFFFF" fontName="" fontStyle="1" nesting="0" />
+
+            <!-- Comments used as headings and blockquotes -->
+            <WordsStyle name="COMMENTS" fgColor="00627A" bgColor="FFFFFF" fontName="" fontStyle="1" nesting="0" />
+            <WordsStyle name="LINE COMMENTS" fgColor="00627A" bgColor="FFFFFF" fontName="" fontStyle="1" nesting="0" />
+            <WordsStyle name="COMMENT DOC" fgColor="00627A" bgColor="FFFFFF" fontName="" fontStyle="1" nesting="0" />
+
+            <!-- Numbers -->
+            <WordsStyle name="NUMBERS" fgColor="7A3E9D" bgColor="FFFFFF" fontName="" fontStyle="0" nesting="0" />
+
+            <!-- Strings (unused mostly, but helps for quoted text in lists) -->
+            <WordsStyle name="STRING" fgColor="3A7A10" bgColor="FFFFFF" fontName="" fontStyle="0" nesting="0" />
+            <WordsStyle name="CHAR" fgColor="3A7A10" bgColor="FFFFFF" fontName="" fontStyle="0" nesting="0" />
+
+            <!-- Delimiters -->
+            <!-- `inline code` -->
+            <WordsStyle name="DELIMITERS1" fgColor="9B2D2D" bgColor="FFF7E6" fontName="" fontStyle="0" nesting="0" />
+            <!-- ``` fenced code ``` -->
+            <WordsStyle name="DELIMITERS2" fgColor="9B2D2D" bgColor="FFF7E6" fontName="" fontStyle="1" nesting="0" />
+            <!-- **bold** -->
+            <WordsStyle name="DELIMITERS3" fgColor="000000" bgColor="FFFFFF" fontName="" fontStyle="1" nesting="0" />
+            <!-- __bold_alt__ -->
+            <WordsStyle name="DELIMITERS4" fgColor="000000" bgColor="FFFFFF" fontName="" fontStyle="1" nesting="0" />
+            <!-- *italic* -->
+            <WordsStyle name="DELIMITERS5" fgColor="000000" bgColor="FFFFFF" fontName="" fontStyle="2" nesting="0" />
+            <!-- _italic_alt_ -->
+            <WordsStyle name="DELIMITERS6" fgColor="000000" bgColor="FFFFFF" fontName="" fontStyle="2" nesting="0" />
+
+            <!-- [text] and (link) -->
+            <WordsStyle name="DELIMITERS7" fgColor="1B6ACB" bgColor="EEF4FF" fontName="" fontStyle="0" nesting="0" />
+            <WordsStyle name="DELIMITERS8" fgColor="1B6ACB" bgColor="EEF4FF" fontName="" fontStyle="0" nesting="0" />
+
+            <!-- Default/other -->
+            <WordsStyle name="UNKNOWN" fgColor="2B2B2B" bgColor="FFFFFF" fontName="" fontStyle="0" nesting="0" />
+        </Styles>
+    </UserLang>
+</NotepadPlus>
+

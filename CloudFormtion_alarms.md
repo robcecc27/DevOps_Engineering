@@ -170,7 +170,7 @@ I can bundle these into templates if you'd like.
 
 ```yaml
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CloudWatch Alarms for RDS PostgreSQL (CPU, IOPS, Memory)
+Description: CloudWatch Alarms for RDS PostgreSQL (CPU, IOPS, Memory, Disk, Connections)
 
 Parameters:
   DBInstanceIdentifier:
@@ -228,6 +228,58 @@ Resources:
       Dimensions:
         - Name: DBInstanceIdentifier
           Value: !Ref DBInstanceIdentifier
+
+  MemoryUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DBInstanceIdentifier}-HighMemoryUtilization"
+      MetricName: DBLoadCPU
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions: [!Ref AlarmSNSTopicARN]
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DBInstanceIdentifier
+
+  DiskUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DBInstanceIdentifier}-HighDiskUtilization"
+      MetricName: DiskQueueDepth
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions: [!Ref AlarmSNSTopicARN]
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DBInstanceIdentifier
+
+  DatabaseConnectionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DBInstanceIdentifier}-HighDatabaseConnections"
+      MetricName: DatabaseConnections
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 2500   # 50% of 5000 max connections
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions: [!Ref AlarmSNSTopicARN]
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DBInstanceIdentifier
+
 ```
 
 ---

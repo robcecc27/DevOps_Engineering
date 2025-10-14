@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudWatch Alarms for RDS PostgreSQL (Memory Utilization, Disk Utilization, Total Connections)
+
+Parameters:
+  DBInstanceIdentifier:
+    Type: String
+    Description: The RDS instance identifier
+  AlarmSNSTopicARN:
+    Type: String
+    Description: ARN of the SNS topic for alarm notifications
+
+Resources:
+  MemoryUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DBInstanceIdentifier}-MemoryUtilization-High"
+      AlarmDescription: "Triggers when estimated memory utilization exceeds 80%"
+      Namespace: AWS/RDS
+      MetricName: FreeableMemory
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      # FreeableMemory threshold based on typical RDS instance memory (example ~1.6GB = 80% used of 8GB)
+      Threshold: 1717986918  # 1.6 GB free = 80% used if total ~8 GB
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmSNSTopicARN]
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DBInstanceIdentifier
+
+  DiskUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DBInstanceIdentifier}-DiskUtilization-High"
+      AlarmDescription: "Triggers when free storage space drops below 20% (80% utilized)"
+      Namespace: AWS/RDS
+      MetricName: FreeStorageSpace
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      # Example threshold assuming 100GB storage → 20GB free = 80% utilized
+      Threshold: 21474836480  # 20 GB free
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmSNSTopicARN]
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DBInstanceIdentifier
+
+  TotalConnectionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DBInstanceIdentifier}-TotalConnections-High"
+      AlarmDescription: "Triggers when total database connections exceed 50% of the PostgreSQL max (2,500 of 5,000)"
+      Namespace: AWS/RDS
+      MetricName: DatabaseConnections
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 2500
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmSNSTopicARN]
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DBInstanceIdentifier
+

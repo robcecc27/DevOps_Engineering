@@ -9,6 +9,11 @@ Parameters:
     Type: String
     Description: ARN of the SNS topic for alarm notifications
 
+# Memory Utilization Alarm
+# What it does:
+# Alerts when the database’s available memory (RAM) drops below 20%, meaning more than 80% of memory is in use.
+# Why it matters:
+# Low free memory can slow queries, increase disk reads, and cause performance degradation or connection timeouts. Catching it early helps prevent slowdowns and stability issues.
 Resources:
   MemoryUtilizationAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -29,6 +34,11 @@ Resources:
         - Name: DBInstanceIdentifier
           Value: !Ref DBInstanceIdentifier
 
+# Disk Utilization Alarm
+# What it does:
+# Alerts when less than 20% of the database’s storage space is free — essentially when the disk is over 80% full.
+# Why it matters:
+# If storage fills up, the database can stop accepting writes or crash. Monitoring this ensures there’s time to scale storage or clean up old data before it becomes critical.
   DiskUtilizationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -49,6 +59,11 @@ Resources:
         - Name: DBInstanceIdentifier
           Value: !Ref DBInstanceIdentifier
 
+# Total Connections Alarm
+# What it does:
+# Alerts when active database connections exceed 50% of the PostgreSQL maximum (2,500 of 5,000).
+# Why it matters:
+# Too many connections can overload the database, causing slow responses or connection failures. This alarm helps detect growing load before it impacts users.
   TotalConnectionsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:

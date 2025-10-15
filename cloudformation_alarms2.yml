@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CloudWatch Alarms for RDS PostgreSQL (Memory Utilization, Disk Utilization, Total Connections)
+Description: CloudWatch Alarms for RDS PostgreSQL (Memory Utilization, Disk Utilization, Total Connections) - tuned for Prod (db.r6i.8xlarge)
 
 Parameters:
   DBInstanceIdentifier:
@@ -14,17 +14,17 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: !Sub "${DBInstanceIdentifier}-MemoryUtilization-High"
-      AlarmDescription: "Triggers when estimated memory utilization exceeds 80%"
+      AlarmDescription: "Triggers when estimated memory utilization exceeds 80% (FreeableMemory < 51.2 GB for db.r6i.8xlarge)"
       Namespace: AWS/RDS
       MetricName: FreeableMemory
       Statistic: Average
       Period: 300
       EvaluationPeriods: 2
-      # FreeableMemory threshold based on typical RDS instance memory (example ~1.6GB = 80% used of 8GB)
-      Threshold: 1717986918  # 1.6 GB free = 80% used if total ~8 GB
+      Threshold: 54931274752   # 51.2 GiB free = 20% free on 256 GiB total
       ComparisonOperator: LessThanThreshold
       TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmSNSTopicARN]
+      AlarmActions:
+        - !Ref AlarmSNSTopicARN
       Dimensions:
         - Name: DBInstanceIdentifier
           Value: !Ref DBInstanceIdentifier
@@ -33,17 +33,18 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: !Sub "${DBInstanceIdentifier}-DiskUtilization-High"
-      AlarmDescription: "Triggers when free storage space drops below 20% (80% utilized)"
+      AlarmDescription: "Triggers when free storage space drops below 20% (80% utilized). Adjust threshold if DB storage differs."
       Namespace: AWS/RDS
       MetricName: FreeStorageSpace
       Statistic: Average
       Period: 300
       EvaluationPeriods: 2
-      # Example threshold assuming 100GB storage → 20GB free = 80% utilized
-      Threshold: 21474836480  # 20 GB free
+      # Example threshold assuming 500GB allocated → 20% = 100GB free
+      Threshold: 107374182400  # 100 GiB free
       ComparisonOperator: LessThanThreshold
       TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmSNSTopicARN]
+      AlarmActions:
+        - !Ref AlarmSNSTopicARN
       Dimensions:
         - Name: DBInstanceIdentifier
           Value: !Ref DBInstanceIdentifier
@@ -52,7 +53,7 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: !Sub "${DBInstanceIdentifier}-TotalConnections-High"
-      AlarmDescription: "Triggers when total database connections exceed 50% of the PostgreSQL max (2,500 of 5,000)"
+      AlarmDescription: "Triggers when total database connections exceed 50% of PostgreSQL max (2,500 of 5,000)."
       Namespace: AWS/RDS
       MetricName: DatabaseConnections
       Statistic: Average
@@ -61,8 +62,8 @@ Resources:
       Threshold: 2500
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmSNSTopicARN]
+      AlarmActions:
+        - !Ref AlarmSNSTopicARN
       Dimensions:
         - Name: DBInstanceIdentifier
           Value: !Ref DBInstanceIdentifier
-

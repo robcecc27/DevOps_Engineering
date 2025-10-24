@@ -184,6 +184,14 @@ Resources:
   CPUUtilizationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmDescription: |
+        High CPU utilization detected (>80%). This may indicate heavy query load or inefficient queries.
+        Resolution steps:
+        1. Check CloudWatch metrics for sustained CPU usage.
+        2. Review Performance Insights or pg_stat_activity for long-running or blocking queries.
+        3. Analyze slow query logs.
+        4. Confirm instance size fits workload; consider scaling up or adding read replicas.
+        5. If usage remains high for over 30 minutes, engage DBA or scaling team.
       AlarmName: !Sub "${DBInstanceIdentifier}-HighCPU"
       MetricName: CPUUtilization
       Namespace: AWS/RDS
@@ -200,6 +208,14 @@ Resources:
   ReadIOPSAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmDescription: |
+        High read IOPS detected (>10,000). This suggests intensive read activity or insufficient caching.
+        Resolution steps:
+        1. Verify read traffic using CloudWatch metrics and Enhanced Monitoring.
+        2. Check buffer cache hit ratio (target greater than 99 percent).
+        3. Identify frequent queries or reports performing large reads.
+        4. Optimize indexing or caching at the application level.
+        5. Consider upgrading storage type to provisioned IOPS or a larger instance class.
       AlarmName: !Sub "${DBInstanceIdentifier}-HighReadIOPS"
       MetricName: ReadIOPS
       Namespace: AWS/RDS
@@ -216,6 +232,14 @@ Resources:
   FreeableMemoryAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmDescription: |
+        Low available memory detected (<200 MB). This may cause query latency or connection instability.
+        Resolution steps:
+        1. Confirm metric trend in CloudWatch; short spikes may be harmless.
+        2. Check active sessions and large in-memory operations.
+        3. Tune work_mem, shared_buffers, and autovacuum settings.
+        4. Restart or scale up the instance if memory pressure persists.
+        5. Engage DBA if swap usage or memory saturation continues.
       AlarmName: !Sub "${DBInstanceIdentifier}-LowFreeableMemory"
       MetricName: FreeableMemory
       Namespace: AWS/RDS
@@ -232,6 +256,14 @@ Resources:
   MemoryUtilizationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmDescription: |
+        High database load or memory utilization (>80%). This may indicate resource contention from queries or cache growth.
+        Resolution steps:
+        1. Check DBLoad and CPU metrics for concurrency spikes.
+        2. Review pg_stat_activity for blocking or parallel queries.
+        3. Evaluate parameter settings such as max_connections and work_mem.
+        4. Tune queries or scale the instance vertically.
+        5. If sustained for over 30 minutes, escalate to the DBA team for workload analysis.
       AlarmName: !Sub "${DBInstanceIdentifier}-HighMemoryUtilization"
       MetricName: DBLoadCPU
       Namespace: AWS/RDS
@@ -249,6 +281,14 @@ Resources:
   DiskUtilizationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmDescription: |
+        High disk queue depth or I/O wait (>80%). Likely caused by intensive writes, insufficient IOPS, or vacuum operations.
+        Resolution steps:
+        1. Check CloudWatch IOPS and latency metrics.
+        2. Review database write activity, autovacuum jobs, or batch operations.
+        3. Ensure storage is not near full and IOPS capacity is adequate.
+        4. Consider moving to provisioned IOPS or a higher class instance.
+        5. If the issue persists, open a storage performance investigation.
       AlarmName: !Sub "${DBInstanceIdentifier}-HighDiskUtilization"
       MetricName: DiskQueueDepth
       Namespace: AWS/RDS
@@ -266,6 +306,14 @@ Resources:
   DatabaseConnectionsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmDescription: |
+        High number of active connections (>2500). This can lead to resource exhaustion or connection timeouts.
+        Resolution steps:
+        1. Check pg_stat_activity for idle or long-running connections.
+        2. Ensure application connection pooling, such as PgBouncer, is in use.
+        3. Identify sudden traffic surges or unclosed application sessions.
+        4. Tune max_connections and pool size if appropriate.
+        5. If the issue persists for over 15 minutes, restart the connection pool or scale the instance.
       AlarmName: !Sub "${DBInstanceIdentifier}-HighDatabaseConnections"
       MetricName: DatabaseConnections
       Namespace: AWS/RDS
@@ -524,4 +572,3 @@ Would you like me to:
 * Include tagging or notification metadata to help categorize alarms?
 
 Let me know how you'd like to organize or deploy these across environments.
-

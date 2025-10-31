@@ -14,30 +14,39 @@
 ```yaml
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  ALB availability monitoring with CloudWatch and Route53 (internal-friendly).
-  Includes alarms: Target 5XX, Unhealthy Hosts, Zero 2XX (drives Route53 Health Check), 4XX Error Rate %.
-  Route53 Health Check uses CloudWatch alarm mirroring (no public probe required).
+  ALB availability monitoring for internal apps using CloudWatch + Route53 (via CloudWatch alarm).
+  Inputs are the CloudWatch metric *dimensions* (not ARNs), so no parsing is required.
+  Alarms included: Target 5XX (sum), Unhealthy Hosts (max), Zero 2XX (sum; drives R53 HC), 4XX Error Rate (%).
 
 Parameters:
 
+  # -------------------------------
+  # Required identifiers
+  # -------------------------------
   EnvironmentName:
     Type: String
     AllowedPattern: "^[a-z0-9-]+$"
-    Description: Short identifier (e.g., dev, stage, prod)
+    Description: Short identifier for the environment (e.g., dev, stage, prod)
 
-  LoadBalancerArn:
+  # IMPORTANT: These are the *metric dimension* strings expected by CloudWatch, not ARNs.
+  # Examples:
+  #   LoadBalancerDimension: app/CF-dev-s3-alb/08bds3636casd
+  #   TargetGroupDimension:  targetgroup/CF-dev2ui-dev-s3-tg/123abc456def789
+  LoadBalancerDimension:
     Type: String
-    Description: ARN of the ALB (arn:...:loadbalancer/app/NAME/ID)
+    Description: CloudWatch dimension for the ALB (format: app/<name>/<id>)
 
-  TargetGroupArn:
+  TargetGroupDimension:
     Type: String
-    Description: ARN of the Target Group (arn:...:targetgroup/NAME/ID)
+    Description: CloudWatch dimension for the Target Group (format: targetgroup/<name>/<id>)
 
   AlarmSNSTopicARN:
     Type: String
     Description: SNS topic ARN for alarm notifications
 
-  # ---- Thresholds (override per env if needed) ----
+  # -------------------------------
+  # Thresholds (override per env if needed)
+  # -------------------------------
   Target5XXPerMinuteThreshold:
     Type: Number
     Default: 10
@@ -56,7 +65,7 @@ Parameters:
   FourXXRatePercentThreshold:
     Type: Number
     Default: 10
-    Description: 4XX as % of total requests to alarm on
+    Description: 4XX as a percent of total requests to alarm on
 
   FourXXRateEvalPeriods:
     Type: Number
@@ -66,58 +75,23 @@ Parameters:
 Resources:
 
   # ---------------------------------------------------------
-  # Helpers: Robust CloudWatch metric dimensions from ARNs
-  # ---------------------------------------------------------
-  # ALB dimension must be "app/<name>/<id>" (no 'loadbalancer/' prefix).
-  # Safe method: split on "loadbalancer/" (no position assumptions).
-  LoadBalancerDimensionParam:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: !Sub "/monitoring/${EnvironmentName}/alb-dimension"
-      Type: String
-      Value: !Select
-        - 1
-        - !Split
-          - "loadbalancer/"
-          - !Ref LoadBalancerArn
-      Description: Derived ALB dimension for CloudWatch (e.g., app/my-alb/abc123)
-
-  # TargetGroup dimension must be "targetgroup/<name>/<id>" (including prefix).
-  # Safe method: split on "targetgroup/" and re-prepend "targetgroup/".
-  TargetGroupDimensionParam:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: !Sub "/monitoring/${EnvironmentName}/tg-dimension"
-      Type: String
-      Value: !Join
-        - ""
-        - - "targetgroup/"
-          - !Select
-            - 1
-            - !Split
-              - "targetgroup/"
-              - !Ref TargetGroupArn
-      Description: Derived TG dimension for CloudWatch (e.g., targetgroup/api/xyz789)
-
-  # ---------------------------------------------------------
-  # ALARMS
+  # ALARMS — Application Load Balancer + Target Group
   # ---------------------------------------------------------
 
-  # Backend 5XX Count (burst)
   Target5XXAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: !Sub "${EnvironmentName}-ALB-Target-5XX-High"
       AlarmDescription: >
-        Backend app returning many 5XX responses (reachable but failing). Indicates
-        app/runtime errors, dependency outages, or bad deploys.
+        Backend application returning many 5XX responses (reachable but failing).
+        Indicates app/runtime errors, dependency outages, or a bad deploy.
       Namespace: AWS/ApplicationELB
       MetricName: HTTPCode_Target_5XX_Count
       Dimensions:
         - Name: LoadBalancer
-          Value: !GetAtt LoadBalancerDimensionParam.Value
+          Value: !Ref LoadBalancerDimension
         - Name: TargetGroup
-          Value: !GetAtt TargetGroupDimensionParam.Value
+          Value: !Ref TargetGroupDimension
       Statistic: Sum
       Period: 60
       EvaluationPeriods: 3
@@ -126,21 +100,20 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlarmSNSTopicARN]
 
-  # Unhealthy Hosts
   UnhealthyHostsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: !Sub "${EnvironmentName}-ALB-UnhealthyHosts"
       AlarmDescription: >
-        One or more targets behind the ALB are failing health checks. Reduced or zero
-        capacity to serve traffic is likely.
+        One or more targets behind the ALB are failing health checks.
+        The ALB may have reduced or zero capacity to serve traffic.
       Namespace: AWS/ApplicationELB
       MetricName: UnHealthyHostCount
       Dimensions:
         - Name: TargetGroup
-          Value: !GetAtt TargetGroupDimensionParam.Value
+          Value: !Ref TargetGroupDimension
         - Name: LoadBalancer
-          Value: !GetAtt LoadBalancerDimensionParam.Value
+          Value: !Ref LoadBalancerDimension
       Statistic: Maximum
       Period: 60
       EvaluationPeriods: 2
@@ -149,38 +122,36 @@ Resources:
       TreatMissingData: breaching
       AlarmActions: [!Ref AlarmSNSTopicARN]
 
-  # Zero 2XX (black-hole / total outage) — drives Route53 HC
+  # Zero 2XX — chosen as the driver for Route53 HealthCheck (R1 design)
   Zero2XXAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: !Sub "${EnvironmentName}-ALB-No-Successful-Requests"
       AlarmDescription: >
-        No successful (2XX) responses for several minutes. Detects DNS/routing issues or
-        total outage where requests are not succeeding.
+        No successful (2XX) responses for several minutes.
+        Detects DNS/routing issues or total outage where requests are not succeeding.
       Namespace: AWS/ApplicationELB
       MetricName: HTTPCode_Target_2XX_Count
       Dimensions:
         - Name: LoadBalancer
-          Value: !GetAtt LoadBalancerDimensionParam.Value
+          Value: !Ref LoadBalancerDimension
         - Name: TargetGroup
-          Value: !GetAtt TargetGroupDimensionParam.Value
+          Value: !Ref TargetGroupDimension
       Statistic: Sum
       Period: 60
       EvaluationPeriods: !Ref Zero2XXMinutes
       Threshold: 1
       ComparisonOperator: LessThanThreshold
-      TreatMissingData: notBreaching   # Z1 (you chose this)
+      TreatMissingData: notBreaching   # Z1 behavior: quiet periods are not outages
       AlarmActions: [!Ref AlarmSNSTopicARN]
-      OKActions: []
 
-  # 4XX Error Rate (%) using metric math
   FourXXRateAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: !Sub "${EnvironmentName}-ALB-4XX-Rate-High"
       AlarmDescription: >
-        Client-error rate is high (4XX as a percentage of total requests). Useful for detecting
-        auth failures, breaking API changes, or misconfigurations.
+        Client-error rate is high (4XX as a percentage of total requests).
+        Useful for detecting auth failures, breaking API changes, or misconfigurations.
       ComparisonOperator: GreaterThanThreshold
       EvaluationPeriods: !Ref FourXXRateEvalPeriods
       Threshold: !Ref FourXXRatePercentThreshold
@@ -194,9 +165,9 @@ Resources:
               MetricName: RequestCount
               Dimensions:
                 - Name: LoadBalancer
-                  Value: !GetAtt LoadBalancerDimensionParam.Value
+                  Value: !Ref LoadBalancerDimension
                 - Name: TargetGroup
-                  Value: !GetAtt TargetGroupDimensionParam.Value
+                  Value: !Ref TargetGroupDimension
             Period: 60
             Stat: Sum
           ReturnData: false
@@ -207,9 +178,9 @@ Resources:
               MetricName: HTTPCode_Target_4XX_Count
               Dimensions:
                 - Name: LoadBalancer
-                  Value: !GetAtt LoadBalancerDimensionParam.Value
+                  Value: !Ref LoadBalancerDimension
                 - Name: TargetGroup
-                  Value: !GetAtt TargetGroupDimensionParam.Value
+                  Value: !Ref TargetGroupDimension
             Period: 60
             Stat: Sum
           ReturnData: false
@@ -219,7 +190,8 @@ Resources:
           ReturnData: true
 
   # ---------------------------------------------------------
-  # Route53 Health Check (R1): mirrors the CloudWatch Zero2XX alarm
+  # ROUTE53 HEALTH CHECK (R1) — Mirrors Zero2XXAlarm via CloudWatch
+  # Works for internal-only apps (no public HTTP probe).
   # ---------------------------------------------------------
   Route53HealthCheck:
     Type: AWS::Route53::HealthCheck
@@ -233,7 +205,7 @@ Resources:
         - Key: Name
           Value: !Sub "${EnvironmentName}-App-Availability-From-CW"
 
-  # Optional: CloudWatch alarm watching the Route53 health check status (visibility)
+  # Optional: visibility alarm on Route53 health status itself
   Route53HealthStatusAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -258,13 +230,6 @@ Outputs:
     Description: ID of the Route53 Health Check (mirrors Zero2XX alarm)
     Value: !Ref Route53HealthCheck
 
-  LoadBalancerMetricDimension:
-    Description: Dimension string used by CloudWatch for the ALB
-    Value: !GetAtt LoadBalancerDimensionParam.Value
-
-  TargetGroupMetricDimension:
-    Description: Dimension string used by CloudWatch for the Target Group
-    Value: !GetAtt TargetGroupDimensionParam.Value
 ```
 
 ---

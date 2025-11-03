@@ -229,20 +229,10 @@ Resources:
     Properties:
       HealthCheckConfig:
         Type: CLOUDWATCH_METRIC
-        MetricName: HTTPCode_Target_2XX_Count
-        Namespace: AWS/ApplicationELB
-        Dimensions:
-          - Name: LoadBalancer
-            Value: !Ref LoadBalancerDimension
-          - Name: TargetGroup
-            Value: !Ref TargetGroupDimension
-        Statistic: Sum
-        Period: 60
-        EvaluationPeriods: !Ref Zero2XXMinutes
-        Threshold: 1
-        ComparisonOperator: LessThanThreshold
-        TreatMissingData: notBreaching
-        HealthThreshold: 1
+        AlarmIdentifier:
+          Name: !Ref Zero2XXAlarm
+          Region: !Ref AWS::Region
+        InsufficientDataHealthStatus: Healthy
       HealthCheckTags:
         - Key: Name
           Value: "App-Availability-From-CW"

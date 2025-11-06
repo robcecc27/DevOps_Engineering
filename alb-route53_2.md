@@ -1,306 +1,126 @@
-# Second attempt for CF alerts
+# ALB Availability & Route53 Health Monitoring
 
-## What is does - how it changed
+**CloudFormation Service Catalog Product**
 
-* Bulletproof ARN handling (no more `Fn::Select index` errors)
-* Internal app + **Route53 health check mirrored to a CloudWatch alarm** (R1)
-* Alarms: **5XX count**, **Unhealthy hosts**, **Zero 2XX** (drives Route53 HC), **4XX error-rate %**
-* `Zero 2XX` uses **Z1** (treat missing data as *not breaching*) as you chose
+This Service Catalog product deploys a standardized monitoring package for internal Application Load Balancers (ALBs). It provisions CloudWatch alarms and a Route53 Health Check that evaluates ALB availability without requiring external HTTP probes.
 
----
-
-# 1) CloudFormation template (paste as `monitoring-alb.yml`)
-
-```yaml
-AWSTemplateFormatVersion: "2010-09-09"
-Description: >
-  ALB availability monitoring for internal apps using CloudWatch + Route53 (via CloudWatch alarm).
-  Inputs are the CloudWatch metric *dimensions* (not ARNs), so no parsing is required.
-  Alarms included: Target 5XX (sum), Unhealthy Hosts (max), Zero 2XX (sum; drives R53 HC), 4XX Error Rate (%).
-
-Parameters:
-
-  # -------------------------------
-  # Required identifiers
-  # -------------------------------
-  EnvironmentName:
-    Type: String
-    AllowedPattern: "^[a-z0-9-]+$"
-    Description: Short identifier for the environment (e.g., dev, stage, prod)
-
-  # IMPORTANT: These are the *metric dimension* strings expected by CloudWatch, not ARNs.
-  # Examples:
-  #   LoadBalancerDimension: app/CF-dev-s3-alb/08bds3636casd
-  #   TargetGroupDimension:  targetgroup/CF-dev2ui-dev-s3-tg/123abc456def789
-  LoadBalancerDimension:
-    Type: String
-    Description: CloudWatch dimension for the ALB (format: app/<name>/<id>)
-
-  TargetGroupDimension:
-    Type: String
-    Description: CloudWatch dimension for the Target Group (format: targetgroup/<name>/<id>)
-
-  AlarmSNSTopicARN:
-    Type: String
-    Description: SNS topic ARN for alarm notifications
-
-  # -------------------------------
-  # Thresholds (override per env if needed)
-  # -------------------------------
-  Target5XXPerMinuteThreshold:
-    Type: Number
-    Default: 10
-    Description: Sum of Target 5XX per 60s period to alarm on (burst detection)
-
-  UnhealthyHostCountThreshold:
-    Type: Number
-    Default: 1
-    Description: Number of unhealthy targets to trigger an alarm
-
-  Zero2XXMinutes:
-    Type: Number
-    Default: 5
-    Description: Minutes with no 2XX responses before alarming (black-hole detection)
-
-  FourXXRatePercentThreshold:
-    Type: Number
-    Default: 10
-    Description: 4XX as a percent of total requests to alarm on
-
-  FourXXRateEvalPeriods:
-    Type: Number
-    Default: 3
-    Description: Evaluation periods (minutes) for sustained 4XX rate
-
-Resources:
-
-  # ---------------------------------------------------------
-  # ALARMS — Application Load Balancer + Target Group
-  # ---------------------------------------------------------
-
-  Target5XXAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${EnvironmentName}-ALB-Target-5XX-High"
-      AlarmDescription: >
-        Backend application returning many 5XX responses (reachable but failing).
-        Indicates app/runtime errors, dependency outages, or a bad deploy.
-      Namespace: AWS/ApplicationELB
-      MetricName: HTTPCode_Target_5XX_Count
-      Dimensions:
-        - Name: LoadBalancer
-          Value: !Ref LoadBalancerDimension
-        - Name: TargetGroup
-          Value: !Ref TargetGroupDimension
-      Statistic: Sum
-      Period: 60
-      EvaluationPeriods: 3
-      Threshold: !Ref Target5XXPerMinuteThreshold
-      ComparisonOperator: GreaterThanThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmSNSTopicARN]
-
-  UnhealthyHostsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${EnvironmentName}-ALB-UnhealthyHosts"
-      AlarmDescription: >
-        One or more targets behind the ALB are failing health checks.
-        The ALB may have reduced or zero capacity to serve traffic.
-      Namespace: AWS/ApplicationELB
-      MetricName: UnHealthyHostCount
-      Dimensions:
-        - Name: TargetGroup
-          Value: !Ref TargetGroupDimension
-        - Name: LoadBalancer
-          Value: !Ref LoadBalancerDimension
-      Statistic: Maximum
-      Period: 60
-      EvaluationPeriods: 2
-      Threshold: !Ref UnhealthyHostCountThreshold
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: breaching
-      AlarmActions: [!Ref AlarmSNSTopicARN]
-
-  # Zero 2XX — chosen as the driver for Route53 HealthCheck (R1 design)
-  Zero2XXAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${EnvironmentName}-ALB-No-Successful-Requests"
-      AlarmDescription: >
-        No successful (2XX) responses for several minutes.
-        Detects DNS/routing issues or total outage where requests are not succeeding.
-      Namespace: AWS/ApplicationELB
-      MetricName: HTTPCode_Target_2XX_Count
-      Dimensions:
-        - Name: LoadBalancer
-          Value: !Ref LoadBalancerDimension
-        - Name: TargetGroup
-          Value: !Ref TargetGroupDimension
-      Statistic: Sum
-      Period: 60
-      EvaluationPeriods: !Ref Zero2XXMinutes
-      Threshold: 1
-      ComparisonOperator: LessThanThreshold
-      TreatMissingData: notBreaching   # Z1 behavior: quiet periods are not outages
-      AlarmActions: [!Ref AlarmSNSTopicARN]
-
-  FourXXRateAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${EnvironmentName}-ALB-4XX-Rate-High"
-      AlarmDescription: >
-        Client-error rate is high (4XX as a percentage of total requests).
-        Useful for detecting auth failures, breaking API changes, or misconfigurations.
-      ComparisonOperator: GreaterThanThreshold
-      EvaluationPeriods: !Ref FourXXRateEvalPeriods
-      Threshold: !Ref FourXXRatePercentThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmSNSTopicARN]
-      Metrics:
-        - Id: req
-          MetricStat:
-            Metric:
-              Namespace: AWS/ApplicationELB
-              MetricName: RequestCount
-              Dimensions:
-                - Name: LoadBalancer
-                  Value: !Ref LoadBalancerDimension
-                - Name: TargetGroup
-                  Value: !Ref TargetGroupDimension
-            Period: 60
-            Stat: Sum
-          ReturnData: false
-        - Id: e4xx
-          MetricStat:
-            Metric:
-              Namespace: AWS/ApplicationELB
-              MetricName: HTTPCode_Target_4XX_Count
-              Dimensions:
-                - Name: LoadBalancer
-                  Value: !Ref LoadBalancerDimension
-                - Name: TargetGroup
-                  Value: !Ref TargetGroupDimension
-            Period: 60
-            Stat: Sum
-          ReturnData: false
-        - Id: rate
-          Expression: "(e4xx / MAX([req, 1])) * 100"
-          Label: "4XX Error Rate (%)"
-          ReturnData: true
-
-  # ---------------------------------------------------------
-  # ROUTE53 HEALTH CHECK (R1) — Mirrors Zero2XXAlarm via CloudWatch
-  # Works for internal-only apps (no public HTTP probe).
-  # ---------------------------------------------------------
-  Route53HealthCheck:
-    Type: AWS::Route53::HealthCheck
-    Properties:
-      HealthCheckConfig:
-        Type: CLOUDWATCH_METRIC
-        CloudWatchAlarmName: !Ref Zero2XXAlarm
-        CloudWatchAlarmRegion: !Ref AWS::Region
-        InsufficientDataHealthStatus: Healthy
-      HealthCheckTags:
-        - Key: Name
-          Value: !Sub "${EnvironmentName}-App-Availability-From-CW"
-
-  # Optional: visibility alarm on Route53 health status itself
-  Route53HealthStatusAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${EnvironmentName}-Route53-HealthCheck-Unhealthy"
-      AlarmDescription: >
-        Route53 health check (mirroring the Zero2XX alarm) is Unhealthy.
-      Namespace: AWS/Route53
-      MetricName: HealthCheckStatus
-      Dimensions:
-        - Name: HealthCheckId
-          Value: !Ref Route53HealthCheck
-      Statistic: Minimum
-      Period: 60
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: LessThanThreshold
-      TreatMissingData: breaching
-      AlarmActions: [!Ref AlarmSNSTopicARN]
-
-Outputs:
-  Route53HealthCheckId:
-    Description: ID of the Route53 Health Check (mirrors Zero2XX alarm)
-    Value: !Ref Route53HealthCheck
-
-```
+This solution is designed for environments that need reliable internal-only monitoring with minimal false positives across Dev, Stage, and Prod.
 
 ---
 
-# 2) README (drop in as `README.md`)
+## Overview
 
-## ALB Availability Monitoring (Internal) + Route53 via CloudWatch Alarm
+This product provides:
 
-This stack adds **internal-friendly** availability monitoring for an **Application Load Balancer (ALB)** and creates a **Route53 health check** that mirrors a CloudWatch alarm (no public probing required).
+### Monitored Signals
 
-### What’s Included
-
-* **Target 5XX High** — app reachable but failing
-* **Unhealthy Hosts** — ALB has failing targets
-* **Zero 2XX** — nothing is succeeding (black-hole/total outage)
-* **4XX Error-Rate %** — client-side/auth spikes
-* **Route53 Health Check** (Type: `CLOUDWATCH_METRIC`) tied to **Zero 2XX** alarm
-
-  * If Zero 2XX = **ALARM**, Route53 HC = **Unhealthy**
-  * Works for **internal-only** apps
-
-### Parameters
-
-| Name                          | Example                                                     | Notes                       |
-| ----------------------------- | ----------------------------------------------------------- | --------------------------- |
-| `EnvironmentName`             | `prod`                                                      | Used in names/tags          |
-| `LoadBalancerArn`             | `arn:aws:elasticloadbalancing:...:loadbalancer/app/web/123` | ALB ARN                     |
-| `TargetGroupArn`              | `arn:aws:elasticloadbalancing:...:targetgroup/api/456`      | Target Group ARN            |
-| `AlarmSNSTopicARN`            | `arn:aws:sns:REGION:ACCT:ops-alerts`                        | Where alarms notify         |
-| `Target5XXPerMinuteThreshold` | `10`                                                        | Burst threshold             |
-| `UnhealthyHostCountThreshold` | `1`                                                         | Allowable unhealthy targets |
-| `Zero2XXMinutes`              | `5`                                                         | Minutes with no 2XX         |
-| `FourXXRatePercentThreshold`  | `10`                                                        | Percent of requests         |
-| `FourXXRateEvalPeriods`       | `3`                                                         | Sustained minutes           |
-
-### Deploy (CLI example)
-
-```bash
-STACK_NAME=alb-availability-${ENV}
-aws cloudformation deploy \
-  --stack-name "$STACK_NAME" \
-  --template-file monitoring-alb.yml \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides \
-    EnvironmentName=${ENV} \
-    LoadBalancerArn=arn:aws:elasticloadbalancing:REGION:ACCT:loadbalancer/app/NAME/ID \
-    TargetGroupArn=arn:aws:elasticloadbalancing:REGION:ACCT:targetgroup/NAME/ID \
-    AlarmSNSTopicARN=arn:aws:sns:REGION:ACCT:ops-alerts
-```
-
-> **Service Catalog:** expose the same parameters; no additional permissions beyond creating CW alarms, SSM parameters, and a Route53 health check.
-
-### Tuning
-
-* **Prod:** defaults are reasonable; adjust after a week of baselining.
-* **Dev/Stage:** consider higher 5XX/4XX thresholds to avoid noise.
-* `Zero 2XX` uses **Z1** (missing data = not breaching) so quiet periods don’t page you.
-
-### How to explain this to management
-
-* We use **five complementary signals** so we can detect issues at the **application**, **load balancer**, and **client-perceived availability** layers.
-* The **Route53 health check** mirrors the **Zero-2XX** alarm, giving us a single “is it working?” status that also supports DNS failover if needed.
-* This reduces detection and recovery time by telling us **what failed** (app vs infra vs routing) instead of just “it’s down.”
+| Monitor               | What it Detects                                | Why it Matters                                                                     |
+| --------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Target 5XX Spikes     | Application responding but failing             | Detects runtime failures, bad deployments, upstream dependency outages             |
+| Unhealthy Host Count  | Targets failing ALB health checks              | Identifies capacity loss or service instability                                    |
+| Zero 2XX Responses    | No successful traffic for N minutes            | Catches black-hole scenarios where the app is unreachable or not serving correctly |
+| High 4XX Rate         | High client-error % with request-volume guard  | Detects configuration issues, bad client traffic, routing or auth problems         |
+| Route53 Health Status | Mirrors Zero-2XX via metric-based health check | Enables failover routing (if configured) and visibility into ALB up/down status    |
 
 ---
 
-# 3) Quick tips if anything errors during deploy
+## Key Design Principles
 
-* **`Fn::Select cannot select`**: solved here by splitting on fixed text (`loadbalancer/`, `targetgroup/`) rather than numeric indexes.
-* **`AccessDenied: route53`**: ensure the product role can `route53:CreateHealthCheck` and `route53:ChangeTagsForResource`.
-* **No traffic at night**: You chose **Z1**, so *missing data ≠ outage*. If you ever want to make “no traffic” unhealthy, switch `TreatMissingData` on `Zero2XXAlarm` to `breaching`.
+* **No public HTTP probing required**
+  Suitable for internal-only applications, zero exposure of endpoints.
 
+* **Metric-based Route53 Health Check**
+  Route53 evaluates CloudWatch metrics directly. It uses the *same* metric, threshold, and evaluation periods as the Zero-2XX alarm for consistency.
 
+* **Noise-reduction controls built-in**
+
+  * Minimum-traffic guard for 4XX alerts
+  * TreatMissingData tuned to avoid false alarms during off-hours or low traffic (e.g., non-Prod)
+
+* **Environment-aware thresholds**
+  Defaults are safe for most workloads but can be adjusted per environment at provisioning time.
+
+---
+
+## Parameters to Provide at Provisioning Time
+
+| Parameter                   | Description                                     | Example                                        |
+| --------------------------- | ----------------------------------------------- | ---------------------------------------------- |
+| EnvironmentName             | Short env identifier                            | dev, stage, prod                               |
+| LoadBalancerDimension       | CloudWatch ALB dimension string                 | `app/myapp-dev-alb/abc123`                     |
+| TargetGroupDimension        | CloudWatch TG dimension string                  | `targetgroup/myapp-dev-tg/xyz456`              |
+| AlarmSNSTopicARN            | SNS Topic ARN for alarm notifications           | `arn:aws:sns:us-east-1:123456789012:AppAlarms` |
+| Target5XXPerMinuteThreshold | 5XX spike threshold per minute                  | 10                                             |
+| UnhealthyHostCountThreshold | Number of unhealthy hosts before alarm          | 1                                              |
+| Zero2XXMinutes              | Minutes with zero success before alarm          | 5                                              |
+| FourXXRatePercentThreshold  | % 4XX to alarm on                               | 10                                             |
+| FourXXRateEvalPeriods       | Consecutive minutes above threshold             | 3                                              |
+| MinRequestVolumeFor4XX      | Minimum requests/min before evaluating 4XX rate | 50                                             |
+
+> Tip: Set higher 4XX thresholds and higher minimum request volume in lower environments to avoid noise.
+
+---
+
+## What Gets Deployed
+
+The product provisions the following AWS resources:
+
+* **4 CloudWatch Alarms**
+
+  * `<env>-ALB-Target-5XX-High`
+  * `<env>-ALB-UnhealthyHosts`
+  * `<env>-ALB-No-Successful-Requests`
+  * `<env>-ALB-4XX-Rate-High`
+
+* **1 Route53 Metric-Based Health Check**
+
+  * Mirrored logic of Zero-2XX alarm
+  * Enables DNS-based failover if implemented
+
+* **1 CloudWatch Alarm for Route53 Health State**
+
+  * `<env>-Route53-HealthCheck-Unhealthy`
+
+* Outputs:
+
+  * `Route53HealthCheckId`
+
+---
+
+## How to Find the Health Check After Deployment
+
+After provisioning, the following output is available in Service Catalog:
+
+* **Route53HealthCheckId** – use this value to:
+
+  * View health state in Route53 console
+  * Attach to a failover or multivalue routing policy if desired
+
+---
+
+## Operational Notes
+
+* Designed for both steady-traffic and bursty internal applications.
+* “No successful responses” does not alert when traffic is idle due to the `TreatMissingData = notBreaching` setting.
+* To integrate with failover routing, attach the Health Check to a Route53 record using Failover or Multivalue routing.
+
+---
+
+## Updating Thresholds Post-Deployment
+
+To adjust alarm sensitivity (e.g., for Prod vs Dev):
+
+1. Open the Service Catalog provisioned product
+2. Choose “Update”
+3. Modify threshold parameters as needed
+4. Re-provision; alarms update without replacement
+
+---
+
+## Support and Maintenance
+
+This monitoring package is intended to be reusable across environments. When updating versions of this Service Catalog product:
+
+* Maintain backward-compatible parameter names where possible
+* Document new parameters or behavioral changes clearly in release notes
 

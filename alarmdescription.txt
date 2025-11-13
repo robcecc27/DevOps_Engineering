@@ -93,5 +93,107 @@ Resolution steps:
 5. If persists >15 min, restart connection pool or scale instance.
 ```
 
+---
+
+# **Troubleshooting Guides for ALB/Route53 Alarms**
+
+---
+
+## **1. Target5XXAlarm — High Target 5XX Errors**
+
+```
+High rate of 5XX errors returned by backend targets.
+Indicates application failures, dependency outages, or bad deployments.
+
+Resolution steps:
+1. Check ALB Target 5XX metrics for spikes or sustained failures.
+2. Review target group health checks; confirm hosts are Healthy.
+3. Inspect application logs for stack traces, timeouts, or dependency errors.
+4. Validate recent deployments or configuration changes.
+5. If all targets are failing, verify upstream services (DB, cache, APIs).
+6. Roll back deploy or restart services if failures persist.
+```
+
+---
+
+## **2. UnhealthyHostsAlarm — Unhealthy Targets Detected**
+
+```
+One or more targets behind the ALB are failing health checks.
+The ALB may have reduced or zero capacity to serve traffic.
+
+Resolution steps:
+1. Open the Target Group page and inspect individual target health statuses.
+2. Review application logs on failing hosts for errors or readiness issues.
+3. Confirm that the health check endpoint returns a valid 200 response.
+4. Check CPU, memory, and disk metrics on the affected instances.
+5. Roll back recent code changes or restart services if issues persist.
+6. If multiple hosts fail simultaneously, investigate network or dependency outages.
+```
+
+---
+
+## **3. Zero2XXAlarm — No Successful (2XX) Responses**
+
+```
+No successful requests reaching the application for several minutes.
+Indicates a full outage, routing issue, or misbehaving deployment.
+
+Resolution steps:
+1. Verify that the ALB is receiving traffic (RequestCount metric).
+2. Check target health counts — zero healthy hosts usually indicates an outage.
+3. Confirm DNS resolves correctly to the ALB; test with dig/nslookup.
+4. Review deployment activity; roll back if the outage aligns with a release.
+5. Check application logs for fatal errors or crash loops.
+6. Validate network path (security groups, NACLs) if traffic is being dropped.
+```
+
+---
+
+## **4. FourXXRateAlarm — High 4XX Error Rate**
+
+```
+High percentage of client errors (4XX) returned by the ALB.
+Often caused by invalid requests, authentication failures, or routing mistakes.
+
+Resolution steps:
+1. Review ALB access logs to identify common 4XX types (401, 403, 404, 429).
+2. Check for malformed client requests or expired authentication tokens.
+3. Validate that routing rules and ALB listener rules are configured correctly.
+4. Review recent application deployments for API path or auth changes.
+5. Confirm that upstream services are accepting and validating requests correctly.
+6. If 4XX spikes correlate with an external client, investigate rate limits or misuse.
+```
+
+---
+
+## **5. Route53HealthStatusAlarm — Route53 Health Check Unhealthy**
+
+```
+The Route53 health check reports the application as Unhealthy.
+This mirrors the Zero-2XX alarm and indicates the app is not returning success responses.
+
+Resolution steps:
+1. Verify the associated CloudWatch Zero-2XX alarm for more context.
+2. Confirm that the CloudWatch metric used by the health check is accurate.
+3. Check target group health and ensure at least one host is Healthy.
+4. Review DNS routing policies and failover behavior (if using Route53 failover).
+5. Ensure the health check is correctly configured with the right region and metric.
+6. If the app is healthy but health check is not, investigate IAM or metric permissions.
+```
+
+---
+
+## **6. (Optional) If You Want a Combined Executive Summary**
+
+If you want to present the alarm set to managers:
+
+```
+These alarms monitor the availability and behavior of applications behind the ALB.  
+They detect backend failures (5XX), target instance issues (unhealthy hosts),  
+total outages (Zero 2XX), client-side errors (4XX rate), and verifiable health via Route53.  
+Together, they provide early-warning coverage for application outages, routing issues,  
+bad deployments, dependency failures, or significant traffic anomalies.
+```
 
 

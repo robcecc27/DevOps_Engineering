@@ -1,0 +1,11 @@
+Daily Team Planning Meeting
+Jira Ticket Management
+Troubleshoot Aqua Scanner Pod Failures
+Update Alarms and Notifications for Database Name Changes
+Add Additional Details to Dev Account Alerts
+Add Additional Details to All Account Alerts
+Add Documentation to SharePoint
+ECS IAM Role Review
+Secrets Handling Validation
+CloudTrail Coverage Validation
+ECR Vulnerability Scan Review

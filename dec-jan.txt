@@ -9,3 +9,14 @@ ECS IAM Role Review
 Secrets Handling Validation
 CloudTrail Coverage Validation
 ECR Vulnerability Scan Review
+
+Feb:
+Participated in daily cross-functional sprint planning meetings
+Managed Jira tickets, workflows, and lifecycle states
+Generated cloud cost and usage analytics reports
+Designed and implemented CloudWatch monitoring dashboards
+Applied infrastructure and application configuration updates
+Authored and published technical documentation to SharePoint
+Reviewed ECR container image vulnerability scan findings
+Validated security scans: Burp, Aqua, Veracode, Contrast
+Configured and integrated Veracode security scanning platform
